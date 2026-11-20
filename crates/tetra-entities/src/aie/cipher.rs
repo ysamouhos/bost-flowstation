@@ -64,6 +64,8 @@ pub struct CellCipher {
     eck: HashMap<u16, [u8; 10]>,
     /// Main carrier, used when a carrier is not known (never expected).
     main_carrier: u16,
+    /// EXPERIMENT: slots added to the downlink IV time (env `TETRA_DL_IV_SLOT_OFFSET`, default 0).
+    dl_iv_offset: i32,
 }
 
 impl CellCipher {
@@ -80,6 +82,13 @@ impl CellCipher {
             ta61: Ta61::new(&sck),
             eck: carriers.iter().map(|&cn| (cn, tb5(&sck, cn, location_area, colour_code))).collect(),
             main_carrier: carriers[0],
+            dl_iv_offset: {
+                let v = std::env::var("TETRA_DL_IV_SLOT_OFFSET").ok().and_then(|v| v.trim().parse::<i32>().ok()).unwrap_or(0);
+                if v != 0 {
+                    tracing::warn!("AIE EXPERIMENT: downlink IV time shifted by {} timeslot(s) (TETRA_DL_IV_SLOT_OFFSET)", v);
+                }
+                v
+            },
         }
     }
 
@@ -144,6 +153,7 @@ impl CellCipher {
 
     fn generate(&self, eck: &SecCipherKey, t: TdmaTime, uplink: bool) -> Kss {
         let mut out = [0u8; KSS_BITS / 8];
+        let t = if uplink { t } else { t.add_timeslots(self.dl_iv_offset) };
         let id = KsgId::from_number(self.ksg - 1).expect("ksg checked by ksg_available");
         let mut g =
             new_ksg(id, eck, Iv::from_raw(iv(t.t, t.f, t.m, t.h, uplink))).expect("ksg_available guarantees a generator for this KSG");
