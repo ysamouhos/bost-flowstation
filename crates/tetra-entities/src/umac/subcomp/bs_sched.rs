@@ -100,7 +100,17 @@ impl CarrierDownlinkMode {
 /// only the default definition, as Motorola radios (MTP6650, MXP600) registered with; the security
 /// element has no meaning on such a cell (Table A.104 note 1).
 pub(crate) fn sysinfo_with_ext_services(ts: TdmaTime, aie_service: bool) -> bool {
-    if aie_service { ts.f % 2 == 0 } else { ts.t % 2 == 0 }
+    // EXPERIMENT: `TETRA_SYSINFO_LEGACY_ROTATION=1` keeps the v0.5.13 rotation by timeslot on an
+    // encrypted cell too (the security element then never reaches the MCCH, as before v0.5.14).
+    static LEGACY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let legacy = *LEGACY.get_or_init(|| {
+        let on = std::env::var("TETRA_SYSINFO_LEGACY_ROTATION").is_ok_and(|v| v.trim() == "1");
+        if on {
+            tracing::warn!("SYSINFO EXPERIMENT: legacy rotation by timeslot (TETRA_SYSINFO_LEGACY_ROTATION=1)");
+        }
+        on
+    });
+    if aie_service && !legacy { ts.f % 2 == 0 } else { ts.t % 2 == 0 }
 }
 
 #[derive(Clone, Debug)]
